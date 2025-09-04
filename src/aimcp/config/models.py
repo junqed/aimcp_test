@@ -57,6 +57,12 @@ class GitLabRepository(BaseModel):
     url: str
     branch: str = "main"
 
+    @field_validator("url")
+    @classmethod
+    def clean_repository_url(cls, v: str) -> str:
+        """Clean up repository URL by removing leading and trailing slashes."""
+        return v.strip("/")
+
 
 class GitLabConfig(BaseModel):
     """GitLab API configuration."""
