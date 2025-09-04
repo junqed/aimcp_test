@@ -63,6 +63,9 @@ class GitLabRepository(BaseModel):
         """Clean up repository URL by removing leading and trailing slashes."""
         return v.strip("/")
 
+    def __hash__(self) -> str:
+        return f"{self.url}:{self.branch}"
+
 
 class GitLabConfig(BaseModel):
     """GitLab API configuration."""
