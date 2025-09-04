@@ -140,7 +140,7 @@ class MCPServer:
             return
 
         # Create tool handler that fetches resources on demand
-        async def tool_handler(**kwargs) -> dict[str, str]:  # type: ignore
+        async def tool_handler() -> dict[str, str]:
             """Handle tool execution by providing resource content."""
             result = {"tool": tool.resolved_name, "repository": tool.repository}
 
