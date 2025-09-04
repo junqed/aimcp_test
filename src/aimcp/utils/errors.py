@@ -59,6 +59,7 @@ def retry_async(
     Returns:
         Decorated function with retry logic
     """
+
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @functools.wraps(func)
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
@@ -74,7 +75,7 @@ def retry_async(
                             function=func.__name__,
                             attempt=attempt + 1,
                             max_attempts=max_attempts,
-                            error=str(e)
+                            error=str(e),
                         )
                         raise
 
@@ -84,7 +85,7 @@ def retry_async(
                         attempt=attempt + 1,
                         max_attempts=max_attempts,
                         delay=current_delay,
-                        error=str(e)
+                        error=str(e),
                     )
 
                     await asyncio.sleep(current_delay)
@@ -93,6 +94,7 @@ def retry_async(
             return None  # Should never reach here
 
         return wrapper
+
     return decorator
 
 
@@ -123,7 +125,7 @@ async def error_context(
             "Operation failed",
             operation=operation,
             error_type=type(e).__name__,
-            error=str(e)
+            error=str(e),
         )
 
         if reraise:
@@ -156,20 +158,19 @@ async def resource_cleanup(*resources: Any) -> AsyncGenerator[None]:
                 else:
                     logger.warning(
                         "Resource does not have cleanup method",
-                        resource_type=type(resource).__name__
+                        resource_type=type(resource).__name__,
                     )
             except Exception as e:
                 cleanup_errors.append(f"{type(resource).__name__}: {str(e)}")
                 logger.error(
                     "Failed to cleanup resource",
                     resource_type=type(resource).__name__,
-                    error=str(e)
+                    error=str(e),
                 )
 
         if cleanup_errors:
             logger.warning(
-                "Some resources failed to cleanup properly",
-                errors=cleanup_errors
+                "Some resources failed to cleanup properly", errors=cleanup_errors
             )
 
 
@@ -187,6 +188,7 @@ def handle_async_errors(
     Returns:
         Decorated function with error handling
     """
+
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @functools.wraps(func)
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
@@ -197,11 +199,12 @@ def handle_async_errors(
                     "Async function error handled",
                     function=func.__name__,
                     error_type=type(e).__name__,
-                    error=str(e)
+                    error=str(e),
                 )
                 return default_return
 
         return wrapper
+
     return decorator
 
 
@@ -231,7 +234,7 @@ class ErrorCollector:
             "Error collected",
             operation=self.operation,
             context=context,
-            error=str(error)
+            error=str(error),
         )
 
     def has_errors(self) -> bool:
@@ -260,6 +263,6 @@ class ErrorCollector:
                     "errors": [
                         {"context": context, "error": str(error)}
                         for context, error in self.errors
-                    ]
-                }
+                    ],
+                },
             )

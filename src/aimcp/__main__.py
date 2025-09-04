@@ -6,12 +6,12 @@ from pathlib import Path
 import typer
 from pydantic import ValidationError
 
-from .config.settings import create_config, validate_config
+from .config.models import AIMCPConfig
 from .utils.logging import setup_logging
 
 app = typer.Typer(
     name="aimcp",
-    help="MCP server for distributing AI rules from GitLab repositories",
+    help="MCP server for distributing tool specifications from GitLab repositories",
     add_completion=False,
 )
 
@@ -59,8 +59,7 @@ def serve(
             overrides["transport"] = transport
 
         # Load configuration
-        config_obj = create_config(config, overrides)
-        validate_config(config_obj)
+        config_obj = AIMCPConfig.create(config, overrides)
 
         # Setup logging
         setup_logging(config_obj.logging)
@@ -76,23 +75,20 @@ def serve(
         from .server.factory import create_mcp_server
 
         async def run_server() -> None:
-            mcp_server = await create_mcp_server(config_obj)
-
+            server = await create_mcp_server(config_obj)
+            
             try:
-                async with mcp_server:
-                    typer.echo("✓ AIMCP server started successfully")
-                    typer.echo("Press Ctrl+C to stop the server")
-
-                    # Keep server running
-                    try:
-                        while True:
-                            await asyncio.sleep(1)
-                    except KeyboardInterrupt:
-                        typer.echo("\nShutting down server...")
-
+                server_runner = await server.get_server_runner()
+                typer.echo("✓ AIMCP server started successfully")
+                typer.echo("Press Ctrl+C to stop the server")
+                await server_runner()
+            except KeyboardInterrupt:
+                typer.echo("\nShutting down server...")
             except Exception as e:
                 typer.echo(f"✗ Server failed to start: {e}", err=True)
-                raise typer.Exit(1)
+                raise typer.Exit(1) from e
+            finally:
+                await server.cleanup()
 
         asyncio.run(run_server())
 
@@ -117,14 +113,17 @@ def validate_config_command(
 ) -> None:
     """Validate configuration file."""
     try:
-        config_obj = create_config(config)
-        validate_config(config_obj)
+        config_obj = AIMCPConfig.create(config)
 
         typer.echo("✓ Configuration is valid")
-        typer.echo(f"  Server: {config_obj.server.host}:{config_obj.server.port} ({config_obj.server.transport})")
+        typer.echo(
+            f"  Server: {config_obj.server.host}:{config_obj.server.port} ({config_obj.server.transport})"
+        )
         typer.echo(f"  GitLab: {config_obj.gitlab.instance_url}")
         typer.echo(f"  Repositories: {len(config_obj.gitlab.repositories)}")
-        typer.echo(f"  Cache: {config_obj.cache.backend} (TTL: {config_obj.cache.ttl_seconds}s)")
+        typer.echo(
+            f"  Cache: {config_obj.cache.backend} (TTL: {config_obj.cache.ttl_seconds}s)"
+        )
 
     except ValidationError as e:
         typer.echo("✗ Configuration validation failed:", err=True)
@@ -150,8 +149,7 @@ def test_gitlab_command(
 ) -> None:
     """Test GitLab connectivity and repository access."""
     try:
-        config_obj = create_config(config)
-        validate_config(config_obj)
+        config_obj = AIMCPConfig.create(config)
 
         typer.echo("Testing GitLab connectivity...")
         typer.echo(f"Instance: {config_obj.gitlab.instance_url}")
@@ -176,13 +174,20 @@ def test_gitlab_command(
                         project = await client.get_project(repo.url)
                         typer.echo(f"✓ {repo.url} - {project.name}")
 
-                        # Test file fetching
-                        rule_files = await client.fetch_rule_files(repo)
-                        typer.echo(f"  Found {len(rule_files)} rule files")
-                        for file_path in list(rule_files.keys())[:3]:  # Show first 3
-                            typer.echo(f"    - {file_path}")
-                        if len(rule_files) > 3:
-                            typer.echo(f"    ... and {len(rule_files) - 3} more")
+                        # Test tools.json detection
+                        has_tools = await client.check_tools_json_exists(repo)
+                        if has_tools:
+                            try:
+                                tools_content = await client.fetch_tools_json(repo)
+                                typer.echo(
+                                    f"  ✓ Found tools.json ({len(tools_content)} bytes)"
+                                )
+                            except Exception as e:
+                                typer.echo(
+                                    f"  ⚠ tools.json exists but failed to fetch: {e}"
+                                )
+                        else:
+                            typer.echo(f"  ⚠ No tools.json found")
 
                     except Exception as e:
                         typer.echo(f"✗ {repo.url} - Error: {e}")
@@ -217,8 +222,7 @@ def cache_clear_command(
 ) -> None:
     """Clear the cache."""
     try:
-        config_obj = create_config(config)
-        validate_config(config_obj)
+        config_obj = AIMCPConfig.create(config)
 
         typer.echo("Clearing cache...")
 
@@ -253,8 +257,7 @@ def cache_stats_command(
 ) -> None:
     """Show cache statistics."""
     try:
-        config_obj = create_config(config)
-        validate_config(config_obj)
+        config_obj = AIMCPConfig.create(config)
 
         typer.echo("Cache statistics:")
 
@@ -267,7 +270,9 @@ def cache_stats_command(
 
                 typer.echo(f"Backend: {config_obj.cache.backend.value}")
                 typer.echo(f"Items: {stats.item_count}")
-                typer.echo(f"Hit rate: {stats.hit_rate:.2%} ({stats.hit_count}/{stats.hit_count + stats.miss_count})")
+                typer.echo(
+                    f"Hit rate: {stats.hit_rate:.2%} ({stats.hit_count}/{stats.hit_count + stats.miss_count})"
+                )
 
                 if stats.memory_usage_bytes:
                     mb = stats.memory_usage_bytes / 1024 / 1024
@@ -282,11 +287,10 @@ def cache_stats_command(
                 if stats.newest_entry:
                     typer.echo(f"Newest entry: {stats.newest_entry}")
 
-                # Show per-repository stats
-                typer.echo("\nPer-repository stats:")
+                # Show configured repositories
+                typer.echo(f"\nRepositories: {len(config_obj.gitlab.repositories)}")
                 for repo in config_obj.gitlab.repositories:
-                    repo_stats = await cache_manager.get_repository_stats(repo)
-                    typer.echo(f"  {repo.url}:{repo.branch} - {repo_stats['cached_files']} files")
+                    typer.echo(f"  {repo.url}:{repo.branch}")
 
         asyncio.run(show_stats())
 
@@ -311,8 +315,7 @@ def health_check_command(
 ) -> None:
     """Check system health status."""
     try:
-        config_obj = create_config(config)
-        validate_config(config_obj)
+        config_obj = AIMCPConfig.create(config)
 
         typer.echo("Checking system health...")
 
@@ -330,7 +333,9 @@ def health_check_command(
             gitlab_client = GitLabClient(config_obj.gitlab)
 
             # Create health checkers
-            gitlab_checker = GitLabHealthChecker(gitlab_client, config_obj.gitlab.repositories)
+            gitlab_checker = GitLabHealthChecker(
+                gitlab_client, config_obj.gitlab.repositories
+            )
             cache_checker = CacheHealthChecker(cache_manager)
 
             system_checker = SystemHealthChecker([gitlab_checker, cache_checker])
@@ -349,7 +354,9 @@ def health_check_command(
                 color = status_colors.get(system_health.status, typer.colors.WHITE)
                 typer.echo("\nSystem Health: ", nl=False)
                 typer.secho(system_health.status.upper(), fg=color, bold=True)
-                typer.echo(f"Checked at: {system_health.checked_at.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+                typer.echo(
+                    f"Checked at: {system_health.checked_at.strftime('%Y-%m-%d %H:%M:%S UTC')}"
+                )
 
                 for check in system_health.checks:
                     status_symbol = {
@@ -361,7 +368,9 @@ def health_check_command(
                     check_color = status_colors.get(check.status, typer.colors.WHITE)
 
                     typer.echo(f"\n{status_symbol} ", nl=False)
-                    typer.secho(f"{check.component.upper()}: {check.status}", fg=check_color)
+                    typer.secho(
+                        f"{check.component.upper()}: {check.status}", fg=check_color
+                    )
                     typer.echo(f"  Message: {check.message}")
 
                     if check.details:
@@ -390,6 +399,7 @@ def health_check_command(
 def version() -> None:
     """Show version information."""
     from . import __version__
+
     typer.echo(f"AIMCP version {__version__}")
 
 

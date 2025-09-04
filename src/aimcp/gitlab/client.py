@@ -68,7 +68,7 @@ class GitLabClient:
         self,
         method: str,
         endpoint: str,
-        **kwargs  # type: ignore
+        **kwargs,  # type: ignore
     ) -> Response:
         """Make HTTP request to GitLab API.
 
@@ -87,16 +87,20 @@ class GitLabClient:
 
         for attempt in range(self.config.max_retries + 1):
             try:
-                logger.debug("Making GitLab API request",
-                           method=method, url=url, attempt=attempt)
+                logger.debug(
+                    "Making GitLab API request", method=method, url=url, attempt=attempt
+                )
 
                 response = await self.client.request(method, url, **kwargs)
 
                 if response.status_code == 429:  # Rate limit
                     if attempt < self.config.max_retries:
-                        wait_time = 2 ** attempt
-                        logger.warning("Rate limited, retrying",
-                                     wait_time=wait_time, attempt=attempt)
+                        wait_time = 2**attempt
+                        logger.warning(
+                            "Rate limited, retrying",
+                            wait_time=wait_time,
+                            attempt=attempt,
+                        )
                         await asyncio.sleep(wait_time)
                         continue
 
@@ -110,15 +114,20 @@ class GitLabClient:
 
                     raise GitLabClientError(message, response.status_code)
 
-                logger.debug("GitLab API request successful",
-                           status_code=response.status_code)
+                logger.debug(
+                    "GitLab API request successful", status_code=response.status_code
+                )
                 return response
 
             except httpx.RequestError as e:
                 if attempt < self.config.max_retries:
-                    wait_time = 2 ** attempt
-                    logger.warning("Request failed, retrying",
-                                 error=str(e), wait_time=wait_time, attempt=attempt)
+                    wait_time = 2**attempt
+                    logger.warning(
+                        "Request failed, retrying",
+                        error=str(e),
+                        wait_time=wait_time,
+                        attempt=attempt,
+                    )
                     await asyncio.sleep(wait_time)
                     continue
                 raise GitLabClientError(f"Request failed: {e}")
@@ -148,7 +157,9 @@ class GitLabClient:
             List of branches
         """
         encoded_path = quote(project_path, safe="")
-        response = await self._make_request("GET", f"/projects/{encoded_path}/repository/branches")
+        response = await self._make_request(
+            "GET", f"/projects/{encoded_path}/repository/branches"
+        )
         return [GitLabBranch(**branch) for branch in response.json()]
 
     async def get_tree(
@@ -274,68 +285,70 @@ class GitLabClient:
                     matching_files.append(file_info)
                     break
 
-        logger.info("Found matching files",
-                   project=project_path,
-                   patterns=patterns,
-                   count=len(matching_files))
+        logger.info(
+            "Found matching files",
+            project=project_path,
+            patterns=patterns,
+            count=len(matching_files),
+        )
 
         return matching_files
 
-    async def fetch_rule_files(
-        self, repository: GitLabRepository
-    ) -> dict[str, str]:
-        """Fetch all rule files from a repository.
+    async def check_tools_json_exists(self, repository: GitLabRepository) -> bool:
+        """Check if tools.json exists in a repository.
 
         Args:
             repository: Repository configuration
 
         Returns:
-            Dictionary mapping file paths to content
+            True if tools.json exists, False otherwise
         """
-        logger.info("Fetching rule files",
-                   repository=repository.url,
-                   branch=repository.branch,
-                   patterns=repository.file_patterns)
+        try:
+            await self.get_file(
+                repository.url,
+                "tools.json",
+                repository.branch,
+            )
+            return True
+        except GitLabClientError as e:
+            if e.status_code == 404:
+                return False
+            # Re-raise other errors
+            raise
+
+    async def fetch_tools_json(self, repository: GitLabRepository) -> str:
+        """Fetch tools.json content from a repository.
+
+        Args:
+            repository: Repository configuration
+
+        Returns:
+            tools.json content as string
+
+        Raises:
+            GitLabClientError: If file doesn't exist or fetch fails
+        """
+        logger.info(
+            "Fetching tools.json", repository=repository.url, branch=repository.branch
+        )
 
         try:
-            # Find matching files
-            files = await self.find_files_by_pattern(
+            content = await self.get_file_content_decoded(
                 repository.url,
-                repository.file_patterns,
+                "tools.json",
                 repository.branch,
             )
 
-            # Fetch content for each file
-            rule_files = {}
-            for file_info in files:
-                try:
-                    content = await self.get_file_content_decoded(
-                        repository.url,
-                        file_info.path,
-                        repository.branch,
-                    )
-                    rule_files[file_info.path] = content
+            logger.debug(
+                "Fetched tools.json", repository=repository.url, size=len(content)
+            )
 
-                    logger.debug("Fetched rule file",
-                               file=file_info.path,
-                               size=len(content))
+            return content
 
-                except Exception as e:
-                    logger.error("Failed to fetch rule file",
-                               file=file_info.path,
-                               error=str(e))
-                    continue
-
-            logger.info("Successfully fetched rule files",
-                       repository=repository.url,
-                       count=len(rule_files))
-
-            return rule_files
-
-        except Exception as e:
-            logger.error("Failed to fetch rule files",
-                        repository=repository.url,
-                        error=str(e))
+        except GitLabClientError as e:
+            logger.error(
+                "Failed to fetch tools.json", repository=repository.url, error=str(e)
+            )
             raise
 
     async def test_connection(self) -> dict[str, str]:

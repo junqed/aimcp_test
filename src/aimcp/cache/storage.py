@@ -163,8 +163,7 @@ class MemoryCache:
         """Clean up expired entries."""
         async with self._lock:
             expired_keys = [
-                key for key, entry in self._cache.items()
-                if entry.is_expired
+                key for key, entry in self._cache.items() if entry.is_expired
             ]
 
             for key in expired_keys:
@@ -184,7 +183,7 @@ class MemoryCache:
         """Estimate memory size of value."""
         try:
             if isinstance(value, str):
-                return len(value.encode('utf-8'))
+                return len(value.encode("utf-8"))
             elif isinstance(value, int | float):
                 return sys.getsizeof(value)
             elif isinstance(value, list | tuple | dict):
@@ -245,9 +244,7 @@ class FileCache:
 
             # Atomic write
             with tempfile.NamedTemporaryFile(
-                mode="w",
-                dir=self.storage_path,
-                delete=False
+                mode="w", dir=self.storage_path, delete=False
             ) as f:
                 json.dump(index_data, f, indent=2)
                 temp_path = Path(f.name)
@@ -281,7 +278,9 @@ class FileCache:
                 created_at=datetime.fromisoformat(data["created_at"]),
                 ttl_seconds=data.get("ttl_seconds"),
                 access_count=data.get("access_count", 0),
-                last_accessed=datetime.fromisoformat(data["last_accessed"]) if data.get("last_accessed") else None,
+                last_accessed=datetime.fromisoformat(data["last_accessed"])
+                if data.get("last_accessed")
+                else None,
                 size_bytes=data.get("size_bytes"),
             )
 
@@ -319,7 +318,9 @@ class FileCache:
                 value=value,
                 created_at=datetime.now(),
                 ttl_seconds=ttl,
-                size_bytes=len(str(value).encode('utf-8')) if isinstance(value, str) else None,
+                size_bytes=len(str(value).encode("utf-8"))
+                if isinstance(value, str)
+                else None,
             )
 
             await self._save_entry(key, entry)
@@ -343,7 +344,9 @@ class FileCache:
             "created_at": entry.created_at.isoformat(),
             "ttl_seconds": entry.ttl_seconds,
             "access_count": entry.access_count,
-            "last_accessed": entry.last_accessed.isoformat() if entry.last_accessed else None,
+            "last_accessed": entry.last_accessed.isoformat()
+            if entry.last_accessed
+            else None,
             "size_bytes": entry.size_bytes,
         }
 
@@ -427,7 +430,9 @@ class FileCache:
                             yield key
 
             except Exception as e:
-                logger.warning("Failed to read cache file", file=file_path, error=str(e))
+                logger.warning(
+                    "Failed to read cache file", file=file_path, error=str(e)
+                )
                 continue
 
     async def size(self) -> int:
@@ -488,7 +493,11 @@ class FileCache:
                     self._stats.item_count -= 1
 
             except Exception as e:
-                logger.warning("Failed to check cache file expiration", file=file_path, error=str(e))
+                logger.warning(
+                    "Failed to check cache file expiration",
+                    file=file_path,
+                    error=str(e),
+                )
                 continue
 
         if expired_count > 0:

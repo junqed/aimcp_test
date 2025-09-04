@@ -61,7 +61,7 @@ class CacheProtocol(Protocol):
         """Clear all cache entries."""
         ...
 
-    async def keys(self, pattern: str | None = None) -> AsyncIterator[CacheKey]:
+    def keys(self, pattern: str | None = None) -> AsyncIterator[CacheKey]:
         """Get cache keys, optionally filtered by pattern.
 
         Args:

@@ -101,4 +101,6 @@ class CacheConfiguration(BaseModel):
     max_size: int = Field(description="Maximum cache size")
     storage_path: str | None = Field(default=None)
     cleanup_interval_seconds: int = Field(default=300, description="Cleanup interval")
-    enable_statistics: bool = Field(default=True, description="Enable statistics collection")
+    enable_statistics: bool = Field(
+        default=True, description="Enable statistics collection"
+    )

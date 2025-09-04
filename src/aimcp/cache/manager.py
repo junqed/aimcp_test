@@ -3,6 +3,7 @@
 import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from typing import Any
 
 from ..config.models import GitLabRepository
 from ..utils.logging import get_logger
@@ -105,13 +106,13 @@ class CacheManager:
         content = await self.cache.get(key)
 
         if content:
-            logger.debug("Cache hit for rule file",
-                        repository=repository.url,
-                        file=file_path)
+            logger.debug(
+                "Cache hit for rule file", repository=repository.url, file=file_path
+            )
         else:
-            logger.debug("Cache miss for rule file",
-                        repository=repository.url,
-                        file=file_path)
+            logger.debug(
+                "Cache miss for rule file", repository=repository.url, file=file_path
+            )
 
         return content
 
@@ -133,10 +134,12 @@ class CacheManager:
         key = self._make_repository_key(repository, file_path)
         await self.cache.set(key, content, ttl_seconds)
 
-        logger.debug("Cached rule file",
-                    repository=repository.url,
-                    file=file_path,
-                    size=len(content))
+        logger.debug(
+            "Cached rule file",
+            repository=repository.url,
+            file=file_path,
+            size=len(content),
+        )
 
     async def cache_repository_rules(
         self,
@@ -154,10 +157,12 @@ class CacheManager:
         for file_path, content in rule_files.items():
             await self.set_rule_file(repository, file_path, content, ttl_seconds)
 
-        logger.info("Cached repository rules",
-                   repository=repository.url,
-                   branch=repository.branch,
-                   count=len(rule_files))
+        logger.info(
+            "Cached repository rules",
+            repository=repository.url,
+            branch=repository.branch,
+            count=len(rule_files),
+        )
 
     async def get_repository_rules(
         self,
@@ -187,10 +192,12 @@ class CacheManager:
                 logger.warning("Failed to get cached rule file", key=key, error=str(e))
                 continue
 
-        logger.debug("Retrieved repository rules from cache",
-                    repository=repository.url,
-                    branch=repository.branch,
-                    count=len(rule_files))
+        logger.debug(
+            "Retrieved repository rules from cache",
+            repository=repository.url,
+            branch=repository.branch,
+            count=len(rule_files),
+        )
 
         return rule_files
 
@@ -210,10 +217,12 @@ class CacheManager:
             if await self.cache.delete(key):
                 invalidated += 1
 
-        logger.info("Invalidated repository cache",
-                   repository=repository.url,
-                   branch=repository.branch,
-                   count=invalidated)
+        logger.info(
+            "Invalidated repository cache",
+            repository=repository.url,
+            branch=repository.branch,
+            count=invalidated,
+        )
 
         return invalidated
 
@@ -235,9 +244,9 @@ class CacheManager:
         result = await self.cache.delete(key)
 
         if result:
-            logger.debug("Invalidated cached file",
-                        repository=repository.url,
-                        file=file_path)
+            logger.debug(
+                "Invalidated cached file", repository=repository.url, file=file_path
+            )
 
         return result
 
@@ -254,7 +263,9 @@ class CacheManager:
         """
         return await self.cache.get_stats()
 
-    async def get_repository_stats(self, repository: GitLabRepository) -> dict[str, int | str]:
+    async def get_repository_stats(
+        self, repository: GitLabRepository
+    ) -> dict[str, int | str]:
         """Get statistics for a specific repository.
 
         Args:
@@ -303,22 +314,50 @@ class CacheManager:
                 # Check if we already have cached data
                 cached_rules = await self.get_repository_rules(repository)
                 if cached_rules:
-                    logger.debug("Repository already cached, skipping warm-up",
-                               repository=repository.url)
+                    logger.debug(
+                        "Repository already cached, skipping warm-up",
+                        repository=repository.url,
+                    )
                     continue
 
                 # Fetch fresh data
                 rule_files = await fetch_function(repository)
                 await self.cache_repository_rules(repository, rule_files)
 
-                logger.debug("Warmed cache for repository",
-                           repository=repository.url,
-                           count=len(rule_files))
+                logger.debug(
+                    "Warmed cache for repository",
+                    repository=repository.url,
+                    count=len(rule_files),
+                )
 
             except Exception as e:
-                logger.error("Failed to warm cache for repository",
-                           repository=repository.url,
-                           error=str(e))
+                logger.error(
+                    "Failed to warm cache for repository",
+                    repository=repository.url,
+                    error=str(e),
+                )
                 continue
 
         logger.info("Cache warm-up completed")
+
+    # Generic cache methods for non-rule content
+    async def get(self, key: str) -> Any | None:
+        """Get value from cache using string key.
+
+        Args:
+            key: String cache key
+
+        Returns:
+            Cached value or None if not found
+        """
+        return await self.cache.get(key)
+
+    async def set(self, key: str, value: Any, ttl: int | None = None) -> None:
+        """Set value in cache using string key.
+
+        Args:
+            key: String cache key
+            value: Value to cache
+            ttl: Optional TTL override
+        """
+        await self.cache.set(key, value, ttl)

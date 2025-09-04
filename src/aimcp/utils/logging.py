@@ -5,11 +5,12 @@ import sys
 
 import structlog
 from structlog.typing import FilteringBoundLogger
+import orjson
 
 from ..config.models import LoggingConfig
 
 
-def setup_logging(config: LoggingConfig) -> FilteringBoundLogger:
+def setup_logging(config: LoggingConfig) -> FilteringBoundLogger | logging.Logger:
     """Set up structured logging.
 
     Args:
@@ -19,11 +20,15 @@ def setup_logging(config: LoggingConfig) -> FilteringBoundLogger:
         Configured logger
     """
     # Configure standard library logging
-    logging.basicConfig(
-        level=getattr(logging, config.level.upper()),
-        format=config.format,
-        stream=sys.stdout,
-    )
+    logger_config = {
+        "level": getattr(logging, config.level.upper()),
+        "stream": sys.stdout,
+    }
+
+    if config.format is not None:
+        logger_config["format"] = config.format
+
+    logging.basicConfig(**logger_config)
 
     if config.structured:
         # Configure structlog
@@ -36,7 +41,7 @@ def setup_logging(config: LoggingConfig) -> FilteringBoundLogger:
                 structlog.processors.StackInfoRenderer(),
                 structlog.processors.format_exc_info,
                 structlog.processors.UnicodeDecoder(),
-                structlog.processors.JSONRenderer(),
+                structlog.processors.JSONRenderer(serializer=orjson.dumps),
             ],
             wrapper_class=structlog.stdlib.BoundLogger,
             logger_factory=structlog.stdlib.LoggerFactory(),
@@ -48,7 +53,7 @@ def setup_logging(config: LoggingConfig) -> FilteringBoundLogger:
     else:
         # Use standard logging
         logger = logging.getLogger("aimcp")
-        return logger  # type: ignore
+        return logger
 
 
 def get_logger(name: str | None = None) -> FilteringBoundLogger:
