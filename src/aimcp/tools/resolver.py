@@ -72,7 +72,8 @@ class ToolResolver:
             if len(repo_tools_list) == 1:
                 # No conflict - single tool
                 repo, tool = repo_tools_list[0]
-                resolved_tool = self._create_resolved_tool(repo, tool, tool.name)
+                spec = repo_specs[repo]  # Get the specification for this repo
+                resolved_tool = self._create_resolved_tool(repo, tool, tool.name, spec)
                 resolved_tools.append(resolved_tool)
             else:
                 # Conflict detected
@@ -89,15 +90,15 @@ class ToolResolver:
                 match self.strategy:
                     case ConflictResolutionStrategy.PREFIX:
                         resolved_tools.extend(
-                            self._resolve_with_prefix(repo_tools_list, conflict)
+                            self._resolve_with_prefix(repo_tools_list, conflict, repo_specs)
                         )
                     case ConflictResolutionStrategy.PRIORITY:
                         resolved_tools.extend(
-                            self._resolve_with_priority(repo_tools_list, conflict)
+                            self._resolve_with_priority(repo_tools_list, conflict, repo_specs)
                         )
                     case ConflictResolutionStrategy.MERGE:
                         resolved_tools.extend(
-                            self._resolve_with_merge(repo_tools_list, conflict)
+                            self._resolve_with_merge(repo_tools_list, conflict, repo_specs)
                         )
                     case ConflictResolutionStrategy.ERROR:
                         # Will be handled after loop
@@ -117,21 +118,41 @@ class ToolResolver:
         return resolved_tools, conflicts
 
     def _create_resolved_tool(
-        self, repo: GitLabRepository, tool: MCPTool, resolved_name: str
+        self, repo: GitLabRepository, tool: MCPTool, resolved_name: str, spec: ToolsSpecification
     ) -> ResolvedTool:
-        """Create a resolved tool."""
+        """Create a resolved tool with associated resources."""
+        # Find related resources based on resourceRefs
+        related_resources: list[MCPResource] = []
+        if tool.resourceRefs:
+            # Create a lookup map for resources by name
+            resource_map = {resource.name: resource for resource in spec.resources}
+            
+            # Add referenced resources that exist
+            for resource_ref in tool.resourceRefs:
+                if resource_ref in resource_map:
+                    related_resources.append(resource_map[resource_ref])
+                else:
+                    logger.warning(
+                        "Resource reference not found",
+                        tool_name=tool.name,
+                        resource_ref=resource_ref,
+                        available_resources=[r.name for r in spec.resources]
+                    )
+        
         return ResolvedTool(
             original_name=tool.name,
             resolved_name=resolved_name,
             repository=repo.url,
             branch=repo.branch,
             specification=tool,
+            related_resources=related_resources,
         )
 
     def _resolve_with_prefix(
         self,
         repo_tools_list: list[tuple[GitLabRepository, MCPTool]],
         conflict: ToolConflict,
+        repo_specs: dict[GitLabRepository, ToolsSpecification],
     ) -> list[ResolvedTool]:
         """Resolve conflict by prefixing with repository name."""
         resolved_tools = []
@@ -140,8 +161,9 @@ class ToolResolver:
             # Create prefix from repository URL (last part)
             repo_prefix = repo.url.split("/")[-1]
             resolved_name = f"{repo_prefix}_{tool.name}"
+            spec = repo_specs[repo]
 
-            resolved_tool = self._create_resolved_tool(repo, tool, resolved_name)
+            resolved_tool = self._create_resolved_tool(repo, tool, resolved_name, spec)
             resolved_tools.append(resolved_tool)
 
         conflict.resolution = f"Added repository prefixes to tool names"
@@ -157,11 +179,13 @@ class ToolResolver:
         self,
         repo_tools_list: list[tuple[GitLabRepository, MCPTool]],
         conflict: ToolConflict,
+        repo_specs: dict[GitLabRepository, ToolsSpecification],
     ) -> list[ResolvedTool]:
         """Resolve conflict by using first repository (priority order)."""
         # Take the first repository (highest priority)
         repo, tool = repo_tools_list[0]
-        resolved_tool = self._create_resolved_tool(repo, tool, tool.name)
+        spec = repo_specs[repo]
+        resolved_tool = self._create_resolved_tool(repo, tool, tool.name, spec)
 
         conflict.resolution = f"Used tool from {repo.url} (first in configuration)"
         logger.debug(
@@ -177,6 +201,7 @@ class ToolResolver:
         self,
         repo_tools_list: list[tuple[GitLabRepository, MCPTool]],
         conflict: ToolConflict,
+        repo_specs: dict[GitLabRepository, ToolsSpecification],
     ) -> list[ResolvedTool]:
         """Resolve conflict by merging tool descriptions."""
         # Use first tool as base
@@ -190,12 +215,29 @@ class ToolResolver:
             " | ".join(descriptions) if descriptions else base_tool.description
         )
 
+        # Collect all resource references from merged tools
+        all_resource_refs: list[str] = []
+        for repo, tool in repo_tools_list:
+            if tool.resourceRefs:
+                all_resource_refs.extend(tool.resourceRefs)
+
         # Create merged tool specification
         merged_spec = MCPTool(
             name=base_tool.name,
             description=merged_description,
             inputSchema=base_tool.inputSchema,  # Use first tool's schema
+            resourceRefs=all_resource_refs if all_resource_refs else None,
         )
+
+        # Collect resources from all repositories for merge
+        all_resources: list[MCPResource] = []
+        for repo, tool in repo_tools_list:
+            spec = repo_specs[repo]
+            if tool.resourceRefs:
+                resource_map = {resource.name: resource for resource in spec.resources}
+                for resource_ref in tool.resourceRefs:
+                    if resource_ref in resource_map:
+                        all_resources.append(resource_map[resource_ref])
 
         # Create resolved tool
         resolved_tool = ResolvedTool(
@@ -204,6 +246,7 @@ class ToolResolver:
             repository=f"merged({len(repo_tools_list)} repos)",
             branch="multiple",
             specification=merged_spec,
+            related_resources=all_resources,
         )
 
         conflict.resolution = f"Merged descriptions from all repositories"

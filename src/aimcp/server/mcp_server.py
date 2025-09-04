@@ -142,25 +142,50 @@ class MCPServer:
             logger.error("Invalid tool type for registration", tool_type=type(tool))
             return
 
-        # Create tool handler that fetches resources on demand
-        async def tool_handler() -> dict[str, str]:
-            """Handle tool execution by providing resource content."""
-            result = {"tool": tool.resolved_name, "repository": tool.repository}
+        # Create tool handler that provides structured resource information
+        async def tool_handler() -> dict[str, Any]:
+            """Handle tool execution by providing structured resource information."""
+            result: dict[str, Any] = {
+                "tool": tool.resolved_name,
+                "repository": tool.repository,
+                "branch": tool.branch,
+                "resources": []
+            }
 
-            # Add related resource contents
+            # Add structured resource information
             for resource in tool.related_resources:
+                # Generate URI from resource
+                uri = f"aimcp://{tool.repository}/{tool.branch}/{resource.uri}"
+                
+                resource_info = {
+                    "name": resource.name,
+                    "uri": uri,
+                    "description": resource.description,
+                    "mimeType": resource.mimeType,
+                }
+                
+                # For small/critical resources, include content directly
+                # For others, provide URI for on-demand loading with load-resource tool
                 try:
-                    # Generate URI from resource
-                    uri = f"aimcp://{tool.repository}/{tool.branch}/{resource.uri}"
-                    content = await self.tool_manager.get_resource_content(uri)
-                    result[resource.name] = content
+                    # You can adjust this threshold or make it configurable
+                    if resource.size and resource.size < 10000:  # Less than 10KB
+                        content = await self.tool_manager.get_resource_content(uri)
+                        resource_info["content"] = content
+                        resource_info["loaded"] = True
+                    else:
+                        resource_info["loaded"] = False
+                        resource_info["load_hint"] = f"Use load-resource tool with URI: {uri}"
+                        
                 except Exception as e:
                     logger.error(
                         "Failed to fetch resource content", 
                         resource=resource.name, 
                         error=str(e)
                     )
-                    result[resource.name] = f"Error: {e}"
+                    resource_info["error"] = str(e)
+                    resource_info["loaded"] = False
+                
+                result["resources"].append(resource_info)
 
             return result
 
@@ -232,5 +257,73 @@ class MCPServer:
                 error_msg = f"Failed to load resource {uri}: {e}"
                 logger.error("Resource loading failed", uri=uri, error=str(e))
                 return error_msg
+
+        @self._server.tool(
+            name="discover-resources",
+            description="Discover all available resources across all configured repositories",
+        )
+        async def discover_resources(repository_filter: str = "") -> dict[str, Any]:
+            """Discover available resources across repositories.
+            
+            Args:
+                repository_filter: Optional filter to limit to specific repository
+                
+            Returns:
+                Dictionary with resource discovery information
+            """
+            try:
+                discovery_result = {
+                    "repositories": [],
+                    "total_resources": 0,
+                    "resource_summary": {}
+                }
+                
+                # Load tool specifications from all repositories to get resources
+                for repo in self.config.gitlab.repositories:
+                    # Apply repository filter if provided
+                    if repository_filter and repository_filter not in repo.url:
+                        continue
+                        
+                    try:
+                        spec = await self.tool_manager._load_repository_tools(repo)
+                        if spec and spec.resources:
+                            repo_info = {
+                                "repository": repo.url,
+                                "branch": repo.branch,
+                                "resources": []
+                            }
+                            
+                            for resource in spec.resources:
+                                resource_info = {
+                                    "name": resource.name,
+                                    "uri": f"aimcp://{repo.url}/{repo.branch}/{resource.uri}",
+                                    "description": resource.description,
+                                    "mimeType": resource.mimeType,
+                                    "size": resource.size,
+                                }
+                                repo_info["resources"].append(resource_info)
+                                discovery_result["total_resources"] += 1
+                                
+                                # Track MIME types for summary
+                                mime_type = resource.mimeType or "unknown"
+                                discovery_result["resource_summary"][mime_type] = discovery_result["resource_summary"].get(mime_type, 0) + 1
+                            
+                            discovery_result["repositories"].append(repo_info)
+                            
+                    except Exception as e:
+                        logger.error("Failed to discover resources from repository", 
+                                   repository=repo.url, error=str(e))
+                        continue
+                
+                logger.debug("Resource discovery completed", 
+                           repositories=len(discovery_result["repositories"]),
+                           total_resources=discovery_result["total_resources"])
+                
+                return discovery_result
+                
+            except Exception as e:
+                error_msg = f"Resource discovery failed: {e}"
+                logger.error("Resource discovery failed", error=str(e))
+                return {"error": error_msg}
 
         logger.debug("Built-in tools registered")

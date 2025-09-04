@@ -54,6 +54,7 @@ class MCPTool(BaseModel):
     inputSchema: dict[str, Any] | None = None  # JSON Schema as dict
     outputSchema: dict[str, Any] | None = None  # JSON Schema as dict
     annotations: MCPToolAnnotations | None = None
+    resourceRefs: list[str] | None = None  # References to resources by name
 
 
 class ToolsSpecification(BaseModel):
