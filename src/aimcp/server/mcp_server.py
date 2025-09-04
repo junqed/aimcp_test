@@ -44,6 +44,9 @@ class MCPServer:
                 default="prefix",
             )
 
+        # Register built-in tools
+        self._register_builtin_tools()
+
         logger.info("MCP server initialized", name=self.config.server.name)
 
     async def get_server_runner(self) -> Callable[[], Awaitable[None]]:
@@ -202,3 +205,32 @@ class MCPServer:
         if not self._server:
             raise RuntimeError("Server not initialized")
         return self._server
+
+    def _register_builtin_tools(self) -> None:
+        """Register built-in tools."""
+        if not self._server:
+            raise RuntimeError("Server not initialized")
+
+        @self._server.tool(
+            name="load-resource",
+            description="Load content from a resource URI (aimcp://repo/branch/file)",
+        )
+        async def load_resource(uri: str) -> str:
+            """Load resource content by URI.
+            
+            Args:
+                uri: Resource URI in format aimcp://repo/branch/file
+                
+            Returns:
+                Resource content as string
+            """
+            try:
+                content = await self.tool_manager.get_resource_content(uri)
+                logger.debug("Resource loaded successfully", uri=uri, size=len(content))
+                return content
+            except Exception as e:
+                error_msg = f"Failed to load resource {uri}: {e}"
+                logger.error("Resource loading failed", uri=uri, error=str(e))
+                return error_msg
+
+        logger.debug("Built-in tools registered")
