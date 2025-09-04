@@ -42,12 +42,12 @@ class ToolResolver:
 
     def resolve_tools(
         self,
-        repo_tools: dict[GitLabRepository, ToolsSpecification],
+        repo_specs: dict[GitLabRepository, ToolsSpecification],
     ) -> tuple[list[ResolvedTool], list[ToolConflict]]:
         """Resolve tool conflicts across repositories.
 
         Args:
-            repo_tools: Mapping of repositories to their tool specifications
+            repo_specs: Mapping of repositories to their tool specifications
 
         Returns:
             Tuple of (resolved tools, conflicts detected)
@@ -60,7 +60,7 @@ class ToolResolver:
             list
         )
 
-        for repo, spec in repo_tools.items():
+        for repo, spec in repo_specs.items():
             for tool in spec.tools:
                 tools_by_name[tool.name].append((repo, tool))
 
@@ -119,20 +119,13 @@ class ToolResolver:
     def _create_resolved_tool(
         self, repo: GitLabRepository, tool: MCPTool, resolved_name: str
     ) -> ResolvedTool:
-        """Create a resolved tool with resource URIs."""
-        # Generate resource URIs
-        resource_uris = [
-            f"aimcp://{repo.url}/{repo.branch}/{resource}"
-            for resource in tool.resources
-        ]
-
+        """Create a resolved tool."""
         return ResolvedTool(
             original_name=tool.name,
             resolved_name=resolved_name,
             repository=repo.url,
             branch=repo.branch,
             specification=tool,
-            resource_uris=resource_uris,
         )
 
     def _resolve_with_prefix(
@@ -185,7 +178,7 @@ class ToolResolver:
         repo_tools_list: list[tuple[GitLabRepository, MCPTool]],
         conflict: ToolConflict,
     ) -> list[ResolvedTool]:
-        """Resolve conflict by merging tool descriptions and resources."""
+        """Resolve conflict by merging tool descriptions."""
         # Use first tool as base
         base_repo, base_tool = repo_tools_list[0]
 
@@ -197,36 +190,27 @@ class ToolResolver:
             " | ".join(descriptions) if descriptions else base_tool.description
         )
 
-        # Merge resources
-        all_resources = []
-        for repo, tool in repo_tools_list:
-            for resource in tool.resources:
-                all_resources.append(f"aimcp://{repo.url}/{repo.branch}/{resource}")
-
         # Create merged tool specification
         merged_spec = MCPTool(
             name=base_tool.name,
             description=merged_description,
             inputSchema=base_tool.inputSchema,  # Use first tool's schema
-            resources=all_resources,  # Already converted to URIs
         )
 
-        # Create resolved tool (resources already converted to URIs)
+        # Create resolved tool
         resolved_tool = ResolvedTool(
             original_name=base_tool.name,
             resolved_name=base_tool.name,
             repository=f"merged({len(repo_tools_list)} repos)",
             branch="multiple",
             specification=merged_spec,
-            resource_uris=all_resources,
         )
 
-        conflict.resolution = f"Merged descriptions and resources from all repositories"
+        conflict.resolution = f"Merged descriptions from all repositories"
         logger.debug(
             "Resolved conflict with merge strategy",
             tool_name=conflict.name,
             merged_repos=[repo.url for repo, _ in repo_tools_list],
-            total_resources=len(all_resources),
         )
 
         return [resolved_tool]

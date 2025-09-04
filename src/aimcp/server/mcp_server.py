@@ -144,16 +144,20 @@ class MCPServer:
             """Handle tool execution by providing resource content."""
             result = {"tool": tool.resolved_name, "repository": tool.repository}
 
-            # Add resource contents
-            for uri in tool.resource_uris:
+            # Add related resource contents
+            for resource in tool.related_resources:
                 try:
+                    # Generate URI from resource
+                    uri = f"aimcp://{tool.repository}/{tool.branch}/{resource.uri}"
                     content = await self.tool_manager.get_resource_content(uri)
-                    result[uri] = content
+                    result[resource.name] = content
                 except Exception as e:
                     logger.error(
-                        "Failed to fetch resource content", uri=uri, error=str(e)
+                        "Failed to fetch resource content", 
+                        resource=resource.name, 
+                        error=str(e)
                     )
-                    result[uri] = f"Error: {e}"
+                    result[resource.name] = f"Error: {e}"
 
             return result
 
@@ -161,17 +165,21 @@ class MCPServer:
         if not self._server:
             raise RuntimeError("Server not initialized")
         
+        # Use inputSchema if available, otherwise no schema
+        schema = tool.specification.inputSchema if tool.specification.inputSchema else None
+        
         self._server.tool(
             tool_handler,
             name=tool.resolved_name,
             description=tool.specification.description,
+            schema=schema,
         )
 
         logger.debug(
             "Registered MCP tool",
             name=tool.resolved_name,
             repository=tool.repository,
-            resources=len(tool.resource_uris),
+            resources=len(tool.related_resources),
         )
 
     async def _run_stdio(self) -> None:

@@ -288,20 +288,21 @@ class ToolManager:
                 f"No tool specification found for repository {repository.url}"
             )
 
-        # Check if file is in any tool's resources
-        for tool in spec.tools:
-            if file_path in tool.resources:
+        # Check if file is in the resources list
+        for resource in spec.resources:
+            # Check if the URI matches or if it's a relative path that matches
+            if resource.uri == file_path or resource.uri.endswith(f"/{file_path}"):
                 logger.debug(
                     "Resource access validated",
                     repository=repository.url,
                     file_path=file_path,
-                    tool=tool.name,
+                    resource_name=resource.name,
                 )
                 return
 
-        # File not found in any tool's resources
+        # File not found in resources
         raise ToolSpecificationError(
-            f"File {file_path} not accessible - not listed in any tool's resources"
+            f"File {file_path} not accessible - not listed in repository resources"
         )
 
     def set_conflict_strategy(self, strategy: ConflictResolutionStrategy) -> None:
