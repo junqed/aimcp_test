@@ -53,6 +53,8 @@ class ServerConfig(BaseModel):
 
 class GitLabRepository(BaseModel):
     """GitLab repository configuration."""
+    
+    model_config = {"frozen": True}
 
     url: str
     branch: str = "main"
@@ -62,9 +64,6 @@ class GitLabRepository(BaseModel):
     def clean_repository_url(cls, v: str) -> str:
         """Clean up repository URL by removing leading and trailing slashes."""
         return v.strip("/")
-
-    def __hash__(self) -> str:
-        return f"{self.url}:{self.branch}"
 
 
 class GitLabConfig(BaseModel):
