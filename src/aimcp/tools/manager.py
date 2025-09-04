@@ -206,14 +206,26 @@ class ToolManager:
         try:
             # Extract components: aimcp://repo/branch/file/path
             uri_parts = resource_uri[8:]  # Remove 'aimcp://'
-            parts = uri_parts.split("/", 2)
+            
+            # Find the branch part by looking for configured repos
+            # Since repository URLs can contain slashes, we need to match against config
+            repository = None
+            branch = None
+            file_path = None
+            
+            for repo in self.config.gitlab.repositories:
+                # Check if URI starts with this repository URL and branch
+                expected_prefix = f"{repo.url}/{repo.branch}/"
+                if uri_parts.startswith(expected_prefix):
+                    repository = repo.url
+                    branch = repo.branch  
+                    file_path = uri_parts[len(expected_prefix):]
+                    break
+            
+            if not repository or not branch or not file_path:
+                raise ValueError("Could not parse repository, branch, and file path from URI")
 
-            if len(parts) < 3:
-                raise ValueError("Insufficient URI components")
-
-            repository, branch, file_path = parts
-
-            # Validate repository is configured
+            # Find the repository config (we already validated it exists above)
             repo_config = None
             for repo in self.config.gitlab.repositories:
                 if repo.url == repository and repo.branch == branch:
