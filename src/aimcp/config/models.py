@@ -122,6 +122,7 @@ class ToolConfig(BaseModel):
     conflict_resolution_strategy: str = "prefix"
     max_file_size: int = 1024 * 1024
     encoding: str = "utf-8"
+    max_auto_load_size: int = 10 * 1024  # 10KB default for auto-loading resources
 
     @field_validator("conflict_resolution_strategy")
     @classmethod

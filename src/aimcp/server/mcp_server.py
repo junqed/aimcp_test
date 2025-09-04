@@ -167,8 +167,8 @@ class MCPServer:
                 # For small/critical resources, include content directly
                 # For others, provide URI for on-demand loading with load-resource tool
                 try:
-                    # You can adjust this threshold or make it configurable
-                    if resource.size and resource.size < 10000:  # Less than 10KB
+                    should_auto_load = self._should_auto_load_resource(resource)
+                    if should_auto_load:
                         content = await self.tool_manager.get_resource_content(uri)
                         resource_info["content"] = content
                         resource_info["loaded"] = True
@@ -327,3 +327,33 @@ class MCPServer:
                 return {"error": error_msg}
 
         logger.debug("Built-in tools registered")
+
+    def _should_auto_load_resource(self, resource) -> bool:
+        """Determine if a resource should be auto-loaded with tool execution.
+        
+        Args:
+            resource: MCPResource instance
+            
+        Returns:
+            True if resource should be loaded automatically
+        """
+        from ..tools.models import MCPResource
+        
+        if not isinstance(resource, MCPResource):
+            return False
+            
+        # Auto-load based on size (configurable threshold)
+        if resource.size and resource.size <= self.config.tools.max_auto_load_size:
+            return True
+            
+        # Auto-load based on priority annotation
+        if resource.annotations and hasattr(resource.annotations, 'priority'):
+            if resource.annotations.priority and resource.annotations.priority >= 0.8:  # High priority
+                return True
+                
+        # Auto-load based on MIME type (text files are usually small and important)
+        auto_load_types = ['text/markdown', 'text/plain', 'application/json', 'text/yaml']
+        if resource.mimeType in auto_load_types and (not resource.size or resource.size <= 50000):  # 50KB for text
+            return True
+            
+        return False
