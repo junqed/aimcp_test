@@ -165,14 +165,10 @@ class MCPServer:
         if not self._server:
             raise RuntimeError("Server not initialized")
         
-        # Use inputSchema if available, otherwise no schema
-        schema = tool.specification.inputSchema if tool.specification.inputSchema else None
-        
         self._server.tool(
             tool_handler,
             name=tool.resolved_name,
             description=tool.specification.description,
-            schema=schema,
         )
 
         logger.debug(
